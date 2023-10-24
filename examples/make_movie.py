@@ -342,13 +342,15 @@ def png_to_mp4(pngs, fps=10, movie_name=None, overwrite=False, max_size=2**10 * 
         os.system('cp ' + png + ' ' + temp_folder + '/' + png.split('/')[-1])
 
     #Lowest possible crf is 25
-    crf = 25
+    crf = 24
 
     #Set initial file size to be larger than the max size so that the first loop runs
     file_size = max_size + 1
 
     #Loop is repeated until file size is sufficiently small
     while file_size > max_size:
+        # Increment crf
+        crf += 1
         #Build the ffmpeg command to create the video
         #Base command
         ffmpeg_command = "ffmpeg "
