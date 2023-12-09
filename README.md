@@ -1,279 +1,150 @@
-# Zooniverse Processor 
+# MP4 Generator for Solar Flares
 
 ## Foreword
 
-This page contains the code that supports the data processing behind the Zooniverse project [Solar Jet Hunter](https://www.zooniverse.org/projects/sophiemu/solar-jet-hunter). For those of you who are interested in these details, feel free to explore this package!
+This repo is forked from [Kekoa's Version](https://github.com/kekoalasko/Solar_Zooniverse_Processor) for the purpose of using the `make_movie.py` script to convert HEK event to MP4s for use in the Zooniverse Project [Solar Jet Hunter](https://www.zooniverse.org/projects/sophiemu/solar-jet-hunter). You can check out [Kekoa's Version](https://github.com/kekoalasko/Solar_Zooniverse_Processor) if you want to learn more about the ins and outs of how the repo works. If you're just here to generate some MP4s, read on!
 
-This project hosts a software package developed in Python used to create the database of subjects used in the  [Solar Jet Hunter](https://www.zooniverse.org/projects/sophiemu/solar-jet-hunter) Zooniverse project. The aim of this tool is to access the [HEK database](https://lmsal.com/hek/) in which some jets are reported, download the data using the [SDO cutout service](https://www.lmsal.com/get_aia_data/) and create the corresponding subjects for the Zooniverse platform.  
+While typing up this README, I did some testing to verify whether or not things needed to be done the way that I thought they did. In doing so, I found out that things can be done a bit easier than I have been doing them! While this is nice, it also means that the same issues that caused me to have be do things in a convoluted manner might arise again for whoever is using this. Therefore, along with the simplified instructions, I'll be including the more convoluted instructions that one may have to use in order to get things to work.
 
-## Structure
 
-The primary sequence of operations envisioned for this package is:
+# Instructions
 
-1. Download HEK Events (`solar.service.hek`)
-2. Store these events in a database 
-3. Use the cutout service to pull these events (`solar.service.cutout`)
-4. Store job information in database 
-5. Download appropriate fits files based on this data
-6. Convert fits files into movies and pngs for use in zooniverse (`solar.visual`)
-7. Map image coordinates to world coordinates
+In a Linux terminal, clone this repo. I couldn't get Windows to run the scripts. Step into the new directory.
 
-# Generating The Documentation
-
-Thanks to [sphinx](https://www.sphinx-doc.org/en/master/), generating the documention is quite fast. Simply run 
-```console
-mkdir build
-make html
-make latexpdf
 ```
-to generate an html webpage and pdf of the documention, respectively. These files will be generated in the build directory. 
-
-Additionally, there is a presentation located within the documentation folder, which contains more or less the same content as the quickstart. 
-
-# Package Contents
-## Request events from HEK
-```python
-from solar.service.hek import Hek_Service
-h = Hek_Service(event_starttime = '2010-06-01T00:00:00', event_endtime='2010-06-01T00:00:00',event_type=['cj'])
-h.submit_request()
-h.save_request()
-found_events = h.data
-h.save_data()
-```
-
-## Request a cutout
-
-### Submit a request
-
-```python
-from solar.database import Hek_Event, Cutout_Service
-event =  Hek_Event.get()
-cutout = Cutout_Service._from_event(event)
-cutout.submit_request()
-cutout.save_request()
-```
-
-Or from parameters
-
-```python
-cutout = Cutout_Service(Attribute("param1", val1), Attribute("param2", val2))
-cutout.save_request()
-```
-
-Or from an existing request
-
-```python
-from solar.database import Service_Request
-old_cutout_request = Service_Request.get()
-cutout = Cutout_Service._from_model(old_cutout_request)
-cutout.save_request()
-```
-
-Once a request has been submitted, it can later be fetched using.
-
-```python
-cutout.fetch_data()
-found_fits_files = cutout.data
-try:
-    found_fits_files.save()
-except peewee.IntegrityError as e:
-    print(e)
-```
-
-Note that the storing a fits file does not download the file. Rather, it stores a url where the file may be downloaded from.
-
-For cutout, there is also a function for submitted requests in several threads:
-
-```python
-cutout_list = [#Cutout List#]
-completed_requests = multi_cutout(cutout_list)
+git clone https://github.com/lestatclemmer/Solar_Zooniverse_Processor
+cd Solar_Zooniverse_Processor
 ```
 
 
-## Working with the database
+I suggest using a Python virtual environment as the code requires particular versions of certain packages. Then change your source to this environment.
 
-Important information is stored in in an Sqlite3 database. 
-
-### Downloading files
-
-Once a fits file from a cutout request has been successfully retrieved, it must be downloaded from the server. This can be done using the update table command.
-```python
-Fits_File.update_table()
 ```
-This command does its best to download fits files from the server, and update associated metadata. 
-A single record can be updated using
-```python
-f = Fits_File.get()
-f.update_single()
-```
-
-Once this has been done we can use this Fits files to generate images. 
-
-## Create Images
-
-```python
-from solar.visual.image_maker import Basic_Image
-from solar.database import Fits_File, Image_File
-
-fits = Fits_File.get()
-im_maker = Basic_Image('png')
-im = Image_File.create_new_image(fits,im_maker)
-im.save()
-im.world_from_pixel(300,300)
-#or
-im.world_from_pixel(0.3,0.2)
-```
-In the last line, we show how to get a world pixel from a location on the image, either by using the actual pixel location, or a normalized image coordinate. 
-
-
-# Working with Zooniverse
-
-## Preparing to export
-
-
-Once we have a collection of images, we can export them. Takes a variable number of lists of lists of visual files and outputs them in a format readable by zooniverse.
-
-The split function is used to break a list into manageable chunks, with overlap.
-
-```python
-files_per_subject = 10
-subject_overlap = 2
-
-import solar.zooniverse.export as ex
-v = Visual_File.select().where() # Search is narrowed here
-
-zooniverse_export(split(split(v,files_per_subjet, subject_overlap)))
-```
-
-Often, we will need to break things apart by subject. The following is a good template for doing such
-
-```python
-files_per_subject = 10
-subject_overlap = 2
-
-to_export = [
-    [
-        y
-        for y in Visual_File.select()
-        .join(Join_Visual_Fits)
-        .join(Fits_File)
-        .join(Hek_Event)
-        .where(Hek_Event.id == e)
-        .order_by(Fits_File.image_time)
-    ]
-    for e in Hek_Event.select()
-]
-
-# Get rid of an rogure empty sets
-to_export = [x for x in to_export if x]
-
-zooniverse_export(*[split(x, files_per_subject, subject_overlap) for x in to_export])
-```
-
-## Export to Zooniverse with Panoptes
-After the export function the data can be exported to the Solar Jet Hunter Zooniverse project. For this step we use the *Panoptes CLI*, available on GitHub https://github.com/zooniverse/panoptes-cli
-This can be installed using the terminal command 
-```
-$ pip install panoptes-client
-```
-
-The export is done through the terminal interface run in the *export* directory. The following lines are then run 
-
-1)  The user is asked to log in to their Zooniverse account.
-```
-$ panoptes configure
-```
-2)  Users link to the Solar Jet Hunter project with id: 11265.
-```
-$ panoptes project modify 11265 
-```
-3)  A new subject set is created with the name *"Jetdata"* in the Solar Jet Hunter project.
-```
-$ panoptes subject-set create 11265 "Jetdata"  
-```
-4)  The terminal will now print a subject id, example shows *10000*, for the new subject, add this into the following terminal command to add subjects to the new set. Finally the subjects in export can be uploaded in the project.
-```
-$ panoptes subject-set upload-subjects 10000 meta_reduced.csv
-```
-*Note:* The csv file that should be used for the export is meta_reduced.csv, this file is automatically created additional to meta.csv. If meta.csv is used, the quotation style of the headers of the fits files will not work properly with the Panoptes CLI package and no files will be found. Since the information in the header is not needed for Zooniverse the headers are left out in the meta_reduced.csv
-
-## Importing the classified data
-
-Once the data has been classified by zooniverse volunteers, we must read in the data and analyze it. 
-
-The program reads a zooniverse export csv and converts the data in python structures.
-
-```python
-import solar.zooniverse.zimport as zi
-csv_path = "some/file/path"
-z_classifications = zi.load_all(csv_path)
-```
-
-## Aggregation
-
-The zooniverse structures may in turn be converted to spatial objects, which takes the data given by zooniverse volunteers (the position and frame of the images) and converts it into objects containing the actual spatial locations of the data. 
-
-```python
-from solar.agg.structs import make
-import solar.zooniverse.zimport as zi
-csv_path = "some/file/path"
-z_classifications = zi.load_all(csv_path)
-
-single = z_classifications[0]
-
-spatial = make(single)
-
-all_spatial = [make(x) for x in z_classifications]
-# Remove any bad objects
-all_spatial = [x for x in all_spatial if x]
-```
-
-For aggregation purposes, each spatial structs comes with a method `make_data()`, which converts the structs into a tuple of data suitable for aggregation.
-
-# Visualizations
-
-The package comes with several functions which add additional annotations to images. 
-
-```python
-import solar.visual.annot as an
-from solar.datatabase.tables.fits_file import Fits_File
-from solar.visual.img import Basic_Image
-
-rect = an.Rect_Annot(x,y,w,h,a, **kwargs)
-circ = an.Circl_Annot(x,y,r=10, **kwargs)
-im_factory = Basic_Image('png')
-im_factory.add_annotation(rect,circ)
-f = Fits_File.get()
-im_factory.create(f)
+python3 -m venv myenv
+source myenv/bin/activate
 ```
 
 
-# (Work in Progress) Command line interface
+Install the necessary packages using the `setup.py` script. Also install additional necessary packages not listed there.
 
-
-The program contains a basic cli to simplify use. For help, please run the module with the option '-h'.
-
-```console
-$ python3 -m solar -h
-
-usage: Jets Processing [-h] {query,service,visual} ...
-
-positional arguments:
-  {query,service,visual}
-                        Command
-    query               Query one of the databases, if it exists
-    service             Submit a request to a some service
-    visual              Construct visuals from existing fits files
-
-optional arguments:
-  -h, --help            show this help message and exit
+```
+python setup.py install
+pip install git+https://github.com/zooniverse/aggregation-for-caesar.git peewee requests tqdm sunpy
 ```
 
-Help for each subcommand may be accessed in a similar way.
 
-```console
-$ python3 -m solar visual -h
+Step into the directory where the `make_movie.py` script is located.
+
 ```
+cd examples
+```
+
+
+Run the `make_movie.py` script, specifying the timeframe you'd like to search for HEK events to generate MP4s for. (e.g. yyyy-mm-dd)
+I've found that including the `-o` (overwrite) option is necessary for creating the individual PNGs that comprise the resulting MP4.
+The `-i` option is needed to specify the timeframe to search.
+
+```
+python make_movie.py -oi <timeframe>
+```
+
+
+This will take some time, depending on how many solar events are found in the specified timeframe.
+Once it is finished, you can find the generated MP4s in the `examples/files/generated/mp4/` directory, titled by their SOL standard name.
+You can now choose to run the script again for a different timeframe if you'd like! They should be saved in the same directory without touching what is already there.
+
+If you run into issues of confusing origin, (ESPECIALLY related to database problems in relation to the `peewee` package!), consider using the below steps. While they are more convoluted, they've worked for me in the past to get things running smoothly.
+Hopefully it doesn't have to come to that for you, but if you have an unstable connection that causes the `make_movie.py` script to fail, leading to corrupted databases and the like, then you might just have to take that option every time like I have in the past.
+
+
+# Try This if Things Aren't Working Correctly
+
+So the simplified instructions didn't work out for ya? No worries! They didn't work for me at first either. The below instructions are what I had to do to bypass many of the issues I was having.
+The main difference is that the cloned repo is quarantined from the directories that are being worked on. This is because when the `make_movie.py` script would fail on me, which it would often, the repo files seemed to be contaminated in a way that disallowed the script to properly work again. Only by using a fresh repo and virtual environment was I able to proceed once more with generating MP4s.
+
+In addition to the steps given below, there is a script provided (setup-solar-zooniverse.py) that should automatically perform the needed steps to produce MP4 files for a given timeframe. I made this to combat the few-minute-long process required to set everything up after a failed attempt. Feel free to try it out if you find you're having to start fresh often.
+Just be sure to read its comments before using it.
+
+
+## Backup Instructions
+
+Create a folder for everything to reside in. I chose to name it solar-zooniverse-test, but you can name it whatever you'd like. Step into this directory.
+
+```
+mkdir solar-zooniverse-test
+cd solar-zooniverse-test
+```
+
+
+In a Linux terminal, clone this repo. I couldn't get Windows to run the scripts. This will serve as the "quarantined" version of the repo so that when you need to start over with an untouched repo, you can save yourself the ~15 seconds it would take to clone it from GitHub.
+
+```
+git clone https://github.com/lestatclemmer/Solar_Zooniverse_Processor
+```
+
+
+Create a separate directory that will be used to hold the files that are doing the MP4 generation. I'd suggest naming it the date of the HEK events that you're generating MP4s for. Step in to that directory.
+
+```
+mkdir <date>
+cd <date>
+```
+
+
+Create a new Python virtual environment, as the code requires particular versions of certain packages. Then change your source to this environment.
+
+```
+python3 -m venv myenv
+source myenv/bin/activate
+```
+
+
+Clone the "quarantined" repo to this directory. Step into the new directory.
+
+```
+git clone ../Solar_Zooniverse_Processor
+cd Solar_Zooniverse_Processor
+```
+
+
+Install the necessary packages using the `setup.py` script. Also install additional necessary packages not listed there.
+
+```
+python setup.py install
+pip install git+https://github.com/zooniverse/aggregation-for-caesar.git peewee requests tqdm sunpy
+```
+
+
+Step into the directory where the `make_movie.py` script is located.
+
+```
+cd examples
+```
+
+
+Run the `make_movie.py` script, specifying the timeframe you'd like to search for HEK events to generate MP4s for. (e.g. yyyy-mm-dd)
+I've found that including the `-o` (overwrite) option is necessary for creating the individual PNGs that comprise the resulting MP4.
+The `-i` option is needed to specify the timeframe to search.
+
+```
+python make_movie.py -oi <timeframe>
+```
+
+
+Once finished, move the generated files out and delete the unnecessary cloned repo and virtual environment to save space. Deactivate virtual environment.
+```
+mv files ../..
+cd ../..
+rm -rf Solar_Zooniverse_Processor myenv
+deactivate
+```
+
+
+Whenever you find yourself needing to restart, just start fresh with a new virtual environment and repo.
+
+
+
+
 
 
 
