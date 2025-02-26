@@ -1,0 +1,16 @@
+Metadata-Version: 2.2
+Name: solar
+Version: 0.0.2
+Summary: Solar Zooniverse Processor for the jet zooniverse project. This will request and create data to populate the zooniverse project, and aggregate the results.
+Home-page: https://github.com/CharKap/Solar_Zooniverse_Processor
+Author: Charlie Kapsiak, Sophie Musset 
+Author-email: musset.sophie@gmail.com
+Platform: any
+Requires-Dist: numpy>=1.11.0
+Requires-Dist: matplotlib>=1.5.3
+Dynamic: author
+Dynamic: author-email
+Dynamic: home-page
+Dynamic: platform
+Dynamic: requires-dist
+Dynamic: summary
